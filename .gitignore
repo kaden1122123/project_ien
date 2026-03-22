@@ -1,0 +1,25 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+.last_season
+
+# Dependencies
+node_modules/
+
+# Logs & runtime data
+logs/
+data/memory.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test / debug (not production)
+test_env.js
