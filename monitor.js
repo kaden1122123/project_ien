@@ -5,7 +5,7 @@
  */
 
 import { readFileSync, statSync } from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const LOG_FILE   = '/home/clawuser/openclaw-workspace/project_ien/logs/ien_system.log';
 const MEM_FILE   = '/home/clawuser/openclaw-workspace/project_ien/data/memory.json';
@@ -73,17 +73,15 @@ function checkMemory() {
 // ─── 3. 發送 Email ────────────────────────────────────────────────────────
 function sendEmail(subject, body) {
     try {
-        // 使用 gog email send
-        const cmd = [
-            'gog', 'email', 'send',
+        // 使用 execFileSync（陣列形式），避免 shell 解讀 body 中的換行符
+        execFileSync('gog', [
+            'email', 'send',
             '--to', 'k.chang.8844@gmail.com',
             '--subject', subject,
             '--body', body
-        ];
-        execSync(cmd.join(' '), { encoding: 'utf-8', stdio: 'pipe' });
+        ], { encoding: 'utf-8', stdio: 'pipe' });
         console.log('[Monitor] ✅ Email 通知已發送至 k.chang.8844@gmail.com');
     } catch (err) {
-        // gog 失敗時輸出警報文字（OpenClaw cron delivery 會捕捉）
         console.error(`[Monitor] ❌ Email 發送失敗: ${err.message}`);
         console.log(`\n========== 警報（Email 發送失敗）==========\n${body}\n==========================================`);
     }
