@@ -50,7 +50,7 @@ export async function generateContent(news) {
 {
   "topic_summary": "一句話總結今日財經主題（中文，15-30字，用於記憶體留存）",
   "flux_prompt": "全英文．80-150 words．財經新聞視覺化場景圖（非圖表）．關鍵詞：financial journalism, cinematic, moody lighting, editorial photography．場景須呼應文章內容",
-  "ig_caption": "300字以內（繁體中文）．機智詼諧貓語氣．結構：貓視角切入 → 懶洋洋點評財經核心 → 貓的方式帶出 disclaimer。結尾強制定式：🌐 AI 評分僅供參考，不構成投資建議。"
+  "ig_caption": "300字以內（繁體中文）．機智詼諧貓語氣．結構：貓視角切入 → 懶洋洋點評財經核心 → 貓的方式帶出 disclaimer。結尾強制定式：🌐 評論僅供參考，不構成投資建議。"
 }`;
 
     // === PROMPT_INJECTION_MARKER ===
