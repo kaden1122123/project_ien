@@ -51,6 +51,16 @@ const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩
     const userPrompt = `【系統請求】：${SEASON_PROMPT}。${recentContext}`;
 
     try {
+        const msg = await anthropic.messages.create({
+            model: "MiniMax-M2.7",
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages:[
+                { role: "user", content: userPrompt }
+            ],
+            thinking: { type: 'disabled' }
+        });
+
         // ====== 🛡️ MiniMax API 層級錯誤檢查 ======
         // MiniMax 有時 HTTP 200 但 base_resp.status_code !== 0
         // 必須在取 content 之前先攔截，否則後續全部會是 undefined
