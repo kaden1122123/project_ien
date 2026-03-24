@@ -34,7 +34,8 @@ export async function generateContent(recentTopicsQueue) {
   "topic_summary": "一句話總結今天觀察的情境 (用於記憶體留存)",
   "flux_prompt": "給生圖 AI 的全英文 Prompt",
   "ig_caption": "用於 IG 發文的系統日誌。150-250 字。格式：[系統日誌開頭]\\n\\n[觀察內容]\\n\\n[吐槽結論]\\n\\n#[hashtags 3-5個]"
-}`;
+}
+`;
 
     // === PROMPT_INJECTION_MARKER ===
 // 此行由 promptInjector.js 自動維護，請勿手動修改
@@ -42,20 +43,23 @@ export async function generateContent(recentTopicsQueue) {
 const SEASON_PROMPT = `目前為平地的春季，請生成春季情境，如路邊新芽、午后雷陣雨、鴿子聚集覓食、氣溫忽冷忽熱，並讓小艾以物候學角度吐槽碳基生物對花粉過敏的集體焦慮`;
 const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩潰的人類`;
 // ==================================
-    const userPrompt = `【系統請求】：${SEASON_PROMPT}。為避免重複，以下是你最近幾天的觀察紀錄：[${recentTopicsQueue.join(', ')}]。請避開上述情境。`;
+    // 避免 recentTopicsQueue 為空時 prompt 出現 `觀察紀錄：[]` 的奇怪結構
+    const recentContext = recentTopicsQueue.length > 0
+        ? `為避免重複，以下是你最近幾天的觀察紀錄：[${recentTopicsQueue.join(', ')}]。請避開上述情境。`
+        : '這是系統第一次啟動，沒有歷史觀察紀錄，請自由生成任何有趣的觀察主題。';
+
+    const userPrompt = `【系統請求】：${SEASON_PROMPT}。${recentContext}`;
 
     try {
-        const msg = await anthropic.messages.create({
-            model: "MiniMax-M2.7",
-            max_tokens: 4096,   // 加大空間，確保 JSON 文字區塊能完整輸出
-            system: systemPrompt,
-            messages:[
-                { role: "user", content: userPrompt }
-            ],
-            thinking: { type: 'disabled' } // 停用思考 block，節省 tokens 給文字輸出
-        });
+        // ====== 🛡️ MiniMax API 層級錯誤檢查 ======
+        // MiniMax 有時 HTTP 200 但 base_resp.status_code !== 0
+        // 必須在取 content 之前先攔截，否則後續全部會是 undefined
+        const baseResp = msg._private ? msg._private.fetchResponse?.data?.base_resp : null;
+        if (baseResp && baseResp.status_code !== 0) {
+            throw new Error(`[Brain API 錯誤] MiniMax 拒絕請求: ${baseResp.status_msg} (code: ${baseResp.status_code})`);
+        }
 
-        // 取所有 text 類型的 block，用最後一個（避免 thinking block 在前）
+        // ====== 🛡️ 回應格式檢查 ======
         const textBlocks = msg.content.filter(block => block.type === 'text');
         const rawContent = textBlocks.at(-1)?.text;
 
@@ -81,7 +85,6 @@ const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩
         const firstBrace = text.indexOf('{');
         const lastBrace  = text.lastIndexOf('}');
         if (firstBrace >= 0 && lastBrace > firstBrace) {
-            // 從最後一個 } 往前截（最乾淨的 JSON 通常結尾完整）
             for (let shrink = 0; shrink <= 5; shrink++) {
                 const endPos = lastBrace - shrink;
                 if (endPos <= firstBrace) break;
@@ -90,7 +93,6 @@ const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩
                     return JSON.parse(candidate);
                 } catch { /* 繼續縮 */ }
             }
-            // 最後一次：直接試 substring(firstBrace, lastBrace)
             try {
                 return JSON.parse(text.substring(firstBrace, lastBrace + 1));
             } catch { /* fall through */ }
@@ -99,6 +101,8 @@ const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩
         throw new Error(`[Brain JSON Error] 無法解析有效 JSON。原始內容: ${rawContent}`);
 
     } catch (error) {
+        // 已是格式化錯誤，直接拋出
+        if (error.message.includes('[Brain')) throw error;
         throw new Error(`[Brain API 錯誤] Anthropic/MiniMax 請求失敗: ${error.message}`);
     }
 }
