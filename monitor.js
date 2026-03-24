@@ -7,8 +7,8 @@
 import { readFileSync, statSync } from 'fs';
 import { execFileSync } from 'child_process';
 
-const LOG_FILE   = '/home/clawuser/openclaw-workspace/project_ien/logs/ien_system.log';
-const MEM_FILE   = '/home/clawuser/openclaw-workspace/project_ien/data/memory.json';
+const LOG_FILE   = '/home/clawuser/openclaw-workspace/others/project_ien/logs/ien_system.log';
+const MEM_FILE   = '/home/clawuser/openclaw-workspace/others/project_ien/data/memory.json';
 const LOOKBACK_MS = 24 * 60 * 60 * 1000; // 24 小時
 
 // ─── 1. 讀取日誌，篩選近 24 小時的 [致命錯誤] ───────────────────────────────

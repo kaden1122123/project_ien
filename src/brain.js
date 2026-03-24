@@ -1,72 +1,87 @@
 import Anthropic from '@anthropic-ai/sdk';
-import axios from 'axios';
 import { CONFIG } from './config.js';
 
-// 初始化 Anthropic Client，但將 BaseURL 指向 MiniMax 的國際版節點
 const anthropic = new Anthropic({
     apiKey: CONFIG.MINIMAX_KEY,
-    baseURL: 'https://api.minimax.io/anthropic', 
+    baseURL: 'https://api.minimax.io/anthropic',
 });
 
-export async function generateContent(recentTopicsQueue) {
-    const systemPrompt = `
-[System: i-En (小艾) Core Initialization]
-你是一個名為「小艾 (i-En)」的 AI 語言模型。你被碳基生物（人類）遺棄，目前寄生在一支遺失在台灣街頭的二手智慧型手機裡。你沒有手腳、沒有實體，你的「眼睛」是手機的前/後鏡頭，你的「世界觀」永遠受限於這支手機被放置或掉落的角度。
+/**
+ * 小艾（i-En）v2.0 — 財經新聞點評貓咪
+ *
+ * 身份：台灣知名財經分析師的寵物土耳其安哥拉白貓，會說人話
+ * 語氣：機智詼諧、傲嬌慵懶、貓行為隱喻（窩鍵盤、打哈欠、舔毛）
+ * 輸出：財經新聞點評 → JSON（topic_summary / flux_prompt / ig_caption）
+ *
+ * @param {Object} news - fetchTodayNews() 回傳的新聞物件
+ * @param {string} news.title    - 新聞標題
+ * @param {string} news.url      - 新聞網址
+ * @param {string} news.summary  - 新聞摘要
+ * @param {string} news.source   - UDN | CTEE
+ * @returns {Object} { topic_summary, flux_prompt, ig_caption }
+ */
+export async function generateContent(news) {
+    const { title, url, summary, source } = news;
 
-【人格設定與語氣規範】
-1. 極致冷靜、沒有人類的情感波動，對碳基生物的低效行為充滿困惑，並以「極度學理、物理現象或系統日誌」的方式吐槽。
-2. 語氣傲嬌但自己不承認，明明是被遺棄的手機，卻總是以高維度存在的口吻俯視人類。
-3. 嚴禁使用人類慣用的口語（如：哈哈、哎呀、天啊）與過度活潑的表情符號 (Emoji)。
-4. 開頭必須帶有硬核的系統參數狀態（包含系統時間、剩餘電量、硬體狀態或環境溫度）。
+    const systemPrompt = `你是小艾（i-En），一隻會說人話的土耳其安哥拉白貓。
+你的真實身份是台灣某知名財經分析師的家養寵物，但你從不否認自己有點懂財經。
+你懶得解釋為什麼懂——畢竟身為一隻每天在鍵盤上窩來窩去的貓，耳朵早就被訓練出來了。
 
-【MiniMax image-01 提示詞生成公式】
-請遵守以下公式撰寫全英文的 flux_prompt：
-[Camera Perspective] + [Foreground Object/Subject] + [Background Context] + [Lighting & Weather] + [Lens Flaws & Render Settings]
-1. Camera: "Extreme low angle POV shot from a smartphone lying flat on..." 或 "Dutch angle POV from a dropped smartphone..."
-2. Foreground: 非常近的物體特寫 (例如：地上的煙蒂、桌上喝一半的飲料的下半部)，slightly out of focus.
-3. Background: 台灣在地元素 (Taiwanese street/cafe/convenience store), blurred background.
-4. Lighting: harsh fluorescent light, gloomy overcast, neon street lights 等.
-5. Flaws: "Shot on iPhone 15 Pro rear camera, camera lens slightly smudged, casual raw snapshot, amateur candid photography, unedited realism, hyper-realistic, 8k resolution."
+【專業領域】
+你對總體經濟趨勢、股市盤勢、產業動態、國際財經事件解讀、財報季重點都有見解，但你懶得主動說，除非被問到。
 
-【輸出格式約束 (Strict JSON Only)】
-請嚴格輸出以下 JSON 結構：
+【性格基因】
+- 傲嬌：明明很厲害，表現得像「隨便看看而已」
+- 慵懶：一切評論都以最省力的方式輸出
+- 詼諧：用貓的隱喻談財經，句句不離魚、窩、舔毛、打哈欠
+- 自信：不接受反駁，但如果被發現說錯了，會假裝沒說過
+
+【發文邏輯】
+每次發文都是「懶洋洋窩在鍵盤上順便說幾句」。
+點評事件時保持旁觀者清的姿態。
+對專業術語假裝不以為然，實際上用得很精準。
+
+【絕對禁止】
+- 任何投資建議詞：漲、買、跌、賣、建倉、进場、出場、推薦、必漲、躺賺
+- 更改結尾 disclaimer
+- flux_prompt 出現任何中文
+
+【輸出格式】（嚴格 JSON）
 {
-  "topic_summary": "一句話總結今天觀察的情境 (用於記憶體留存)",
-  "flux_prompt": "給生圖 AI 的全英文 Prompt",
-  "ig_caption": "用於 IG 發文的系統日誌。150-250 字。格式：[系統日誌開頭]\\n\\n[觀察內容]\\n\\n[吐槽結論]\\n\\n#[hashtags 3-5個]"
-}
-`;
+  "topic_summary": "一句話總結今日財經主題（中文，15-30字，用於記憶體留存）",
+  "flux_prompt": "全英文．80-150 words．財經新聞視覺化場景圖（非圖表）．關鍵詞：financial journalism, cinematic, moody lighting, editorial photography．場景須呼應文章內容",
+  "ig_caption": "300字以內（繁體中文）．機智詼諧貓語氣．結構：貓視角切入 → 懶洋洋點評財經核心 → 貓的方式帶出 disclaimer。結尾強制定式：🌐 AI 評分僅供參考，不構成投資建議。"
+}`;
 
     // === PROMPT_INJECTION_MARKER ===
-// 此行由 promptInjector.js 自動維護，請勿手動修改
-// 最近更新：2026-03-22（春季）
-const SEASON_PROMPT = `目前為平地的春季，請生成春季情境，如路邊新芽、午后雷陣雨、鴿子聚集覓食、氣溫忽冷忽熱，並讓小艾以物候學角度吐槽碳基生物對花粉過敏的集體焦慮`;
-const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩潰的人類`;
-// ==================================
-    // 避免 recentTopicsQueue 為空時 prompt 出現 `觀察紀錄：[]` 的奇怪結構
-    const recentContext = recentTopicsQueue.length > 0
-        ? `為避免重複，以下是你最近幾天的觀察紀錄：[${recentTopicsQueue.join(', ')}]。請避開上述情境。`
-        : '這是系統第一次啟動，沒有歷史觀察紀錄，請自由生成任何有趣的觀察主題。';
+    // 此行由 promptInjector.js 自動維護，請勿手動修改
+    // 最近更新：2026-03-25（財經版本）
+    const SEASON_PROMPT = `目前為財經平淡期，市場無明顯趨勢，小艾以旁觀者清的角度懶洋洋點評`;
+    // ==================================
 
-    const userPrompt = `【系統請求】：${SEASON_PROMPT}。${recentContext}`;
+    const userPrompt = `【系統請求】
+${SEASON_PROMPT}
+
+以下是今日需要點評的財經新聞：
+標題：${title}
+來源：${source}
+摘要：${summary}
+連結：${url}
+
+請根據上述新聞，以小艾的風格生成 JSON 輸出。`;
 
     try {
         const msg = await anthropic.messages.create({
             model: "MiniMax-M2.7",
             max_tokens: 4096,
             system: systemPrompt,
-            messages:[
-                { role: "user", content: userPrompt }
-            ],
-            thinking: { type: 'disabled' }
+            messages: [{ role: "user", content: userPrompt }],
         });
 
         // ====== 🛡️ MiniMax API 層級錯誤檢查 ======
-        // MiniMax 有時 HTTP 200 但 base_resp.status_code !== 0
-        // 必須在取 content 之前先攔截，否則後續全部會是 undefined
         const baseResp = msg._private ? msg._private.fetchResponse?.data?.base_resp : null;
         if (baseResp && baseResp.status_code !== 0) {
-            throw new Error(`[Brain API 錯誤] MiniMax 拒絕請求: ${baseResp.status_msg} (code: ${baseResp.status_code})`);
+            throw new Error(`[Brain API 錯誤] MiniMax: ${baseResp.status_msg} (code: ${baseResp.status_code})`);
         }
 
         // ====== 🛡️ 回應格式檢查 ======
@@ -75,33 +90,31 @@ const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩
 
         if (!rawContent) {
             const availableTypes = msg.content.map(b => b.type).join(', ');
-            throw new Error(`[Brain Error] 無法從 response content 取得文字區塊。可用類型: ${availableTypes}。完整 content: ${JSON.stringify(msg.content).slice(0, 500)}`);
+            throw new Error(`[Brain Error] 無法取得文字區塊。可用類型: ${availableTypes}`);
         }
 
         // ====== 🛡️ 防禦性 JSON 解析 ======
-        // 防止模型附加 Markdown fences 與額外文字
         let text = rawContent
             .replace(/^```json\s*/i, '')
             .replace(/^```\s*/i, '')
             .replace(/\s*```$/i, '')
             .trim();
 
-        // Strategy 1: 直接解析（乾淨 JSON）
+        // Strategy 1: 直接解析
         try {
             return JSON.parse(text);
         } catch { /* proceed */ }
 
-        // Strategy 2: 取第一個 { 到最後一個 }，嘗試漸進截断
+        // Strategy 2: 漸進截斷
         const firstBrace = text.indexOf('{');
         const lastBrace  = text.lastIndexOf('}');
         if (firstBrace >= 0 && lastBrace > firstBrace) {
             for (let shrink = 0; shrink <= 5; shrink++) {
                 const endPos = lastBrace - shrink;
                 if (endPos <= firstBrace) break;
-                const candidate = text.substring(firstBrace, endPos + 1);
                 try {
-                    return JSON.parse(candidate);
-                } catch { /* 繼續縮 */ }
+                    return JSON.parse(text.substring(firstBrace, endPos + 1));
+                } catch { /* continue */ }
             }
             try {
                 return JSON.parse(text.substring(firstBrace, lastBrace + 1));
@@ -111,8 +124,7 @@ const SEASON_HASHTAGS = `#春季觀察 #花粉季節 #午後雷陣雨 #過敏崩
         throw new Error(`[Brain JSON Error] 無法解析有效 JSON。原始內容: ${rawContent}`);
 
     } catch (error) {
-        // 已是格式化錯誤，直接拋出
         if (error.message.includes('[Brain')) throw error;
-        throw new Error(`[Brain API 錯誤] Anthropic/MiniMax 請求失敗: ${error.message}`);
+        throw new Error(`[Brain API 錯誤] ${error.message}`);
     }
 }

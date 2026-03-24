@@ -14,24 +14,24 @@ const BRAIN_FILE = resolve(__dirname, 'src/brain.js');
 
 // ─── 月份 → 季節 Prompt 對照表 ─────────────────────────────────────────────
 const SEASON_MAP = {
-    1:  '春節',       // 元旦/春節
-    2:  '春節',       // 春季前期
-    3:  '春季',       // 春季
-    4:  '春季',       // 春季
-    5:  '梅雨季',     // 梅雨季
-    6:  '梅雨季',     // 梅雨季
-    7:  '夏季酷暑',   // 夏季酷暑
-    8:  '夏季酷暑',   // 夏季酷暑
-    9:  '秋季',       // 秋季
-    10: '秋季',       // 秋季
-    11: '秋季',       // 秋季
-    12: '冬季濕冷',   // 冬季濕冷
+    1:  "平淡期",       // 元旦新年效應，市場休息期
+    2:  "財報季",      // Q4 財報密集公布
+    3:  "平淡期",       // Q4 財報結束，市場重新布局
+    4:  "平淡期",       // 財報淡季，Q1 展望期
+    5:  "財報季",      // Q1 財報密集公布
+    6:  "平淡期",       // Q1 財報結束
+    7:  "平淡期",       // Q2 展望期
+    8:  "財報季",      // Q2 財報密集公布
+    9:  "平淡期",       // Q2 財報結束，Q3 展望
+    10: "平淡期",       // Q3 展望期
+    11: "財報季",      // Q3 財報密集公布
+    12: "平淡期",       // Q3 財報結束，年終盤點
 };
 
 const now      = new Date();
 const month    = now.getMonth() + 1; // 1-12
 const year     = now.getFullYear();
-const season   = SEASON_MAP[month] || '普通';
+const season   = SEASON_MAP[month] || '平淡期';
 const prevSeasonFile = resolve(__dirname, '.last_season');
 
 console.log(`[PromptSelector] ${year}-${String(month).padStart(2,'0')} → 切換至「${season}」模式`);
