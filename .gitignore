@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 .last_season
+.last_alert_ts
 
 # Dependencies
 node_modules/

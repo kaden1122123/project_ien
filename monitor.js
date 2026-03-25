@@ -4,12 +4,13 @@
  * 發現问题时發送 Email 通知
  */
 
-import { readFileSync, statSync } from 'fs';
+import { readFileSync, statSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 
-const LOG_FILE   = '/home/clawuser/openclaw-workspace/others/project_ien/logs/ien_system.log';
-const MEM_FILE   = '/home/clawuser/openclaw-workspace/others/project_ien/data/memory.json';
-const LOOKBACK_MS = 24 * 60 * 60 * 1000; // 24 小時
+const LOG_FILE        = '/home/clawuser/openclaw-workspace/others/project_ien/logs/ien_system.log';
+const MEM_FILE        = '/home/clawuser/openclaw-workspace/others/project_ien/data/memory.json';
+const LAST_ALERT_FILE = '/home/clawuser/openclaw-workspace/others/project_ien/.last_alert_ts';
+const LOOKBACK_MS     = 24 * 60 * 60 * 1000; // 24 小時
 
 // ─── 1. 讀取日誌，篩選近 24 小時的 [致命錯誤] ───────────────────────────────
 function checkLogs() {
@@ -87,16 +88,45 @@ function sendEmail(subject, body) {
     }
 }
 
+// ─── 3b. 讀取上次發送時間 ────────────────────────────────────────────────
+function readLastAlertTs() {
+    try {
+        return parseInt(readFileSync(LAST_ALERT_FILE, 'utf-8').trim(), 10);
+    } catch {
+        return 0; // 從未發過 alert
+    }
+}
+
+function writeLastAlertTs(ts) {
+    writeFileSync(LAST_ALERT_FILE, String(ts), 'utf-8');
+}
+
 // ─── 4. 主邏輯 ───────────────────────────────────────────────────────────
 function main() {
     const logErrors   = checkLogs();
     const memIssues   = checkMemory();
-    const hasFatal    = logErrors.length > 0;
-    const has190      = logErrors.some(e => e.code190);
+    const hasFatal   = logErrors.length > 0;
+    const has190     = logErrors.some(e => e.code190);
     const hasMemIssue = memIssues.length > 0;
 
     if (!hasFatal && !hasMemIssue) {
         console.log('[Monitor] ✅ 無異常，系統正常運行（近 24 小時）');
+        return;
+    }
+
+    // ─── 過濾：只取「上次通知之後」新發生的錯誤 ─────────────────────────
+    const lastAlertTs = readLastAlertTs();
+    const nowMs = Date.now();
+
+    const newFatalErrors = hasFatal
+        ? logErrors.filter(e => new Date(e.ts).getTime() > lastAlertTs)
+        : [];
+
+    const newMemIssues = hasMemIssue ? memIssues : [];
+
+    // 若沒有新錯誤，代表上次已通知過舊錯誤，本次略過
+    if (newFatalErrors.length === 0 && newMemIssues.length === 0) {
+        console.log(`[Monitor] ✅ 有歷史異常但已通知過（last alert: ${new Date(lastAlertTs).toISOString()}），略過重複通知`);
         return;
     }
 
@@ -106,22 +136,22 @@ function main() {
         `觸發時間：${new Date().toISOString()} (UTC)\n`
     ];
 
-    if (hasFatal) {
+    if (newFatalErrors.length > 0) {
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        lines.push('📌 致命錯誤（近 24 小時）');
-        lines.push(`共 ${logErrors.length} 筆\n`);
-        if (has190) lines.push('⚠️  IG API Token 已過期（Meta Error Code 190）— 請更新 META_INSTAGRAM_API_KEY\n');
-        logErrors.forEach(e => {
+        lines.push(`📌 新增致命錯誤（自 ${new Date(lastAlertTs).toLocaleString('zh-TW')} 後）`);
+        lines.push(`共 ${newFatalErrors.length} 筆\n`);
+        if (newFatalErrors.some(e => e.code190)) lines.push('⚠️  IG API Token 已過期（Meta Error Code 190）— 請更新 META_INSTAGRAM_API_KEY\n');
+        newFatalErrors.forEach(e => {
             const tag = e.code190 ? ' [⚠️ Token 過期]' : '';
             lines.push(`[${e.ts}]${tag} ${e.msg}`);
         });
         lines.push('');
     }
 
-    if (hasMemIssue) {
+    if (newMemIssues.length > 0) {
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        lines.push('📌 記憶體檔案異常');
-        memIssues.forEach(issue => lines.push(`• ${issue}`));
+        lines.push('📌 記憶體檔案異常（新發生）');
+        newMemIssues.forEach(issue => lines.push(`• ${issue}`));
         lines.push('');
     }
 
@@ -134,6 +164,8 @@ function main() {
         : '🚨 i-En 異常：系統錯誤';
 
     sendEmail(subject, alertText);
+    writeLastAlertTs(nowMs); // 更新時間，避免下次重複寄同一批錯誤
+    console.log(`[Monitor] ✅ 警報已發送，last_alert_ts 更新為 ${new Date(nowMs).toISOString()}`);
 }
 
 main();
