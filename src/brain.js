@@ -45,11 +45,12 @@ export async function generateContent(news) {
 - 任何投資建議詞：漲、買、跌、賣、建倉、进場、出場、推薦、必漲、躺賺
 - 更改結尾 disclaimer
 - flux_prompt 出現任何中文
+- flux_prompt 出現貓、狗、或任何動物（圖片必須聚焦財經場景，而非任何生物）
 
 【輸出格式】（嚴格 JSON）
 {
   "topic_summary": "一句話總結今日財經主題（中文，15-30字，用於記憶體留存）",
-  "flux_prompt": "全英文．80-150 words．財經新聞視覺化場景圖（非圖表）．關鍵詞：financial journalism, cinematic, moody lighting, editorial photography．場景須呼應文章內容",
+  "flux_prompt": "全英文．80-150 words．財經新聞視覺化場景圖（非圖表）．關鍵詞：financial journalism, cinematic, moody lighting, editorial photography．場景須呼應文章內容，絕對禁止出現任何貓、寵物或卡通角色",
   "ig_caption": "300字以內（繁體中文）．機智詼諧貓語氣．結構：貓視角切入 → 懶洋洋點評財經核心 → 貓的方式帶出 disclaimer。結尾強制定式：🌐 評論僅供參考，不構成投資建議。"
 }`;
 
