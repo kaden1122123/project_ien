@@ -94,31 +94,28 @@ ${SEASON_PROMPT}
         }
 
         // ====== 🛡️ 防禦性 JSON 解析 ======
-        let text = rawContent
-            .replace(/^```json\s*/i, '')
-            .replace(/^```\s*/i, '')
-            .replace(/\s*```$/i, '')
-            .trim();
+        // 先用 ``` 分段，個別去掉 fences 再解析（處理 }```json{ 的拼接問題）
+        const fenceRegex = /```(?:json)?\s*/gi;
+        const parts = rawContent.split(fenceRegex).filter(p => p.trim());
 
-        // Strategy 1: 直接解析
-        try {
-            return JSON.parse(text);
-        } catch { /* proceed */ }
+        for (const part of parts) {
+            const cleaned = part.trim();
+            try {
+                return JSON.parse(cleaned);
+            } catch { /* try next part */ }
+        }
 
-        // Strategy 2: 漸進截斷
-        const firstBrace = text.indexOf('{');
-        const lastBrace  = text.lastIndexOf('}');
+        // 最後嘗試從整段取第一個 { 到最後一個 }
+        const firstBrace = rawContent.indexOf('{');
+        const lastBrace  = rawContent.lastIndexOf('}');
         if (firstBrace >= 0 && lastBrace > firstBrace) {
             for (let shrink = 0; shrink <= 5; shrink++) {
                 const endPos = lastBrace - shrink;
                 if (endPos <= firstBrace) break;
                 try {
-                    return JSON.parse(text.substring(firstBrace, endPos + 1));
+                    return JSON.parse(rawContent.substring(firstBrace, endPos + 1));
                 } catch { /* continue */ }
             }
-            try {
-                return JSON.parse(text.substring(firstBrace, lastBrace + 1));
-            } catch { /* fall through */ }
         }
 
         throw new Error(`[Brain JSON Error] 無法解析有效 JSON。原始內容: ${rawContent}`);
