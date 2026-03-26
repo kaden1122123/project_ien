@@ -49,7 +49,10 @@ async function main() {
         await updateMemoryQueue(content.topic_summary);
 
     } catch (error) {
-        logger.fatal(`[致命錯誤] ${error?.response?.data || error.message}`);
+        const detail = error?.response?.data
+            ? JSON.stringify(error.response.data, null, 2)
+            : error.message;
+        logger.fatal(`[致命錯誤] ${detail}`);
     } finally {
         logger.info('=== i-En 進入休眠 ===\n');
     }
