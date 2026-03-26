@@ -13,7 +13,7 @@ function sleep(ms) {
  * @param {number} maxWaitMs  - 最大等待時間（預設 5 分鐘）
  * @param {number} intervalMs - 輪詢間隔（預設 5 秒）
  */
-async function waitForContainer(creationId, maxWaitMs = 300000, intervalMs = 5000) {
+async function waitForContainer(creationId, maxWaitMs = 360000, intervalMs = 8000) {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
         const res = await axios.get(
@@ -35,11 +35,11 @@ async function waitForContainer(creationId, maxWaitMs = 300000, intervalMs = 500
  * @returns {string} - 成功發布的 Post ID
  */
 async function publishWithRetry(creationId) {
-    const delays = [10_000, 20_000, 40_000, 60_000, 120_000]; // 10s ~ 2min
+    const delays = [10_000, 20_000, 40_000]; // 3 retries: 10s / 20s / 40s
 
     for (let attempt = 0; attempt <= 5; attempt++) {
         if (attempt > 0) {
-            console.log(`[IG] 9007 重試中（第 ${attempt}/5），等待 ${delays[attempt - 1] / 1000}s...`);
+            console.log(`[IG] 9007 重試中（第 ${attempt}/3），等待 ${delays[attempt - 1] / 1000}s...`);
             await sleep(delays[attempt - 1]);
         }
 
