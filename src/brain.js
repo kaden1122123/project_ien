@@ -7,6 +7,38 @@ const anthropic = new Anthropic({
 });
 
 /**
+ * 將 JSON 字串內的 literal newlines (0x0A) 置換為 \\n escape sequence
+ * MiniMax 有時輸出未轉義的換行字元，導致 JSON.parse() 失敗
+ * @param {string} str - 原始字串
+ * @returns {string} 處理後的字串
+ */
+function _escapeNewlinesInJsonStrings(str) {
+    let result = '';
+    let inString = false;
+    let i = 0;
+    while (i < str.length) {
+        const ch = str[i];
+        if (ch === '\\' && inString && i + 1 < str.length) {
+            // 跳過轉義序列：\\ 或 \" 或 \n 等
+            result += ch + str[i + 1];
+            i += 2;
+            continue;
+        }
+        if (ch === '"') {
+            inString = !inString;
+        } else if (ch === '\n' && inString) {
+            // 在字串內的 literal newline → 置換為 \\n
+            result += '\\n';
+            i++;
+            continue;
+        }
+        result += ch;
+        i++;
+    }
+    return result;
+}
+
+/**
  * 小艾（i-En）v2.0 — 財經新聞點評貓咪
  *
  * 身份：台灣知名財經分析師的寵物土耳其安哥拉白貓，會說人話
@@ -115,6 +147,27 @@ ${SEASON_PROMPT}
                 if (endPos <= firstBrace) break;
                 try {
                     return JSON.parse(rawContent.substring(firstBrace, endPos + 1));
+                } catch { /* continue */ }
+            }
+        }
+
+        // ====== 🛡️ 修復：將字串值內的 literal newlines 置換為 \\n ======
+        // MiniMax 有時會輸出 0x0A literal newline 而非 \\n escape sequence
+        const sanitized = _escapeNewlinesInJsonStrings(rawContent);
+        for (const part of sanitized.split(fenceRegex).filter(p => p.trim())) {
+            try {
+                return JSON.parse(part.trim());
+            } catch { /* try next part */ }
+        }
+
+        // Brace extraction with sanitization
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            const sanitizedSubstr = _escapeNewlinesInJsonStrings(rawContent.substring(firstBrace, lastBrace + 1));
+            for (let shrink = 0; shrink <= 5; shrink++) {
+                const endPos = lastBrace - shrink;
+                if (endPos <= firstBrace) break;
+                try {
+                    return JSON.parse(sanitizedSubstr.substring(0, sanitizedSubstr.length - shrink));
                 } catch { /* continue */ }
             }
         }
