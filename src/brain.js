@@ -86,16 +86,8 @@ export async function generateContent(news) {
   "ig_caption": "300字以內（繁體中文）．機智詼諧貓語氣．結構：貓視角切入 → 懶洋洋點評財經核心 → 貓的方式帶出 disclaimer。結尾強制定式：🌐 評論僅供參考，不構成投資建議。"
 }`;
 
-    // === PROMPT_INJECTION_MARKER ===
-    // 此行由 promptInjector.js 自動維護，請勿手動修改
-    // 最近更新：2026-03-25（財經版本）
-    const SEASON_PROMPT = `目前為財經平淡期，市場無明顯趨勢，小艾以旁觀者清的角度懶洋洋點評`;
-    // ==================================
-
-    const userPrompt = `【系統請求】
-${SEASON_PROMPT}
-
-以下是今日需要點評的財經新聞：
+    // SEASON_PROMPT 已於 2026-04-06 移除（ Hubert 確認不再需要 ）
+    const userPrompt = `以下是今日需要點評的財經新聞：
 標題：${title}
 來源：${source}
 摘要：${summary}
