@@ -115,6 +115,11 @@ export async function generateContent(news) {
 
         if (!rawContent) {
             const availableTypes = msg.content.map(b => b.type).join(', ');
+            // 若只有 thinking blocks，通常是 MiniMax 回覆空白或未完成，稍後重試
+            const hasOnlyThinking = msg.content.length > 0 && msg.content.every(b => b.type === 'thinking');
+            if (hasOnlyThinking) {
+                throw new Error(`[Brain Response Empty] API only returned thinking blocks (no text). This may be a transient MiniMax issue. Available types: ${availableTypes}`);
+            }
             throw new Error(`[Brain Error] 無法取得文字區塊。可用類型: ${availableTypes}`);
         }
 
