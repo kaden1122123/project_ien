@@ -76,7 +76,7 @@ function sendEmail(subject, body) {
     try {
         // 使用 execFileSync（陣列形式），避免 shell 解讀 body 中的換行符
         execFileSync('gog', [
-            'email', 'send',
+            'gmail', 'send',
             '--to', 'k.chang.8844@gmail.com',
             '--subject', subject,
             '--body', body

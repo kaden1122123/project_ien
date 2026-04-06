@@ -34,19 +34,13 @@ export async function updateMemoryQueue(newTopicSummary) {
 // 模組 B：檔案存檔（新增）
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { archiveRecord as _archiveRecord } from './outputArchiver.js';
+export { archiveRecord } from './outputArchiver.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_BASE = join(__dirname, '..', 'output');
 const INDEX_FILE  = join(OUTPUT_BASE, 'index.json');
-
-/**
- * 封裝 outputArchiver.js 的 archiveRecord，統一從 storage.js 匯出。
- * 參數格式與 outputArchiver.js archiveRecord 相同。
- */
-export { _archiveRecord as archiveRecord };
 
 /**
  * 從指定 URL 抓取完整文章內容（作者、正文）
