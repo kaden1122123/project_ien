@@ -9,13 +9,15 @@ import { uploadToR2 } from './uploader.js';
 import { publishToInstagram } from './publisher.js';
 import { updateMemoryQueue, fetchFullArticle } from './storage.js';
 import { archiveRecord } from './outputArchiver.js';
+import { recordRun } from './db.js';
 
 async function main() {
     logger.info('=== Project i-En v2.0（財經貓咪版）啟動 ===');
 
-    let news = null;
-    let content = null;
+    let news      = null;
+    let content   = null;
     let imageBuffer = null;
+    let igResult  = null;  // { postId, containerId, timedOut }
 
     try {
         // [0/5] 抓取今日財經新聞
@@ -34,12 +36,12 @@ async function main() {
         logger.info('[0.5/5] 抓取完整文章內容...');
         try {
             const { author, content: articleContent } = await fetchFullArticle(news.url);
-            news.author = author;
+            news.author  = author;
             news.content = articleContent;
             logger.info(`> 作者: ${author || '(未知)'}｜內容: ${(articleContent || '').length} 字`);
         } catch (err) {
             logger.warn(`[0.5/5] 完整文章抓取失敗，降級使用 summary：${err.message}`);
-            news.author = '';
+            news.author  = '';
             news.content = news.summary;
         }
 
@@ -57,25 +59,62 @@ async function main() {
         const publicImageUrl = await uploadToR2(imageBuffer);
         logger.info(`> R2 網址: ${publicImageUrl}`);
 
-        // [4/5] 發布 IG
+        // [4/5] 發布 IG（含指數退避輪詢，最多 10 分鐘）
         logger.info('[4/5] 發布至 Instagram...');
-        const postId = await publishToInstagram(publicImageUrl, content.ig_caption);
-        logger.info(`> IG 貼文 ID: ${postId}`);
+        igResult = await publishToInstagram(publicImageUrl, content.ig_caption);
+        logger.info(`> IG 貼文 ID: ${igResult.postId}（超時發送: ${igResult.timedOut ? '是' : '否'}）`);
 
         // [5/5] 寫入檔案存檔（Pipeline 成功才執行）
         logger.info('[5/5] 存檔至 output/...');
         const imageBase64 = imageBuffer.toString('base64');
-        await archiveRecord({ news, content, imageBase64, publicImageUrl, postId });
+        await archiveRecord({ news, content, imageBase64, publicImageUrl, postId: igResult.postId });
 
         // [6/5] 寫入滑動視窗記憶體
         logger.info('[6/5] 寫入滑動視窗記憶體...');
         await updateMemoryQueue(content.topic_summary);
 
+        // [7/5] 寫入 SQLite 執行記錄
+        logger.info('[7/5] 寫入執行記錄至資料庫...');
+        recordRun({
+            newsTitle:   news.title,
+            newsUrl:     news.url,
+            newsSource:  news.source,
+            newsAuthor:  news.author  || '',
+            topic:       content.topic_summary,
+            fluxPrompt:  content.flux_prompt,
+            igCaption:   content.ig_caption,
+            imageUrl:    publicImageUrl,
+            postId:      igResult.postId,
+            status:      'success',
+            errorMsg:    igResult.timedOut ? 'IG container timed out, published after wait' : null,
+            rawNews:     news,
+        });
+        logger.info('> SQLite 寫入成功');
+
     } catch (error) {
         const detail = error?.response?.data
             ? JSON.stringify(error.response.data, null, 2)
-            : error.message;
+            : error?.stack
+                ? `${error.message}\n${error.stack.split('\n').slice(1, 3).join('\n')}`
+                : String(error.message || error);
+
         logger.fatal(`[致命錯誤] ${detail}`);
+
+        // 失敗也記錄一筆（news/content 可能有部分資料）
+        recordRun({
+            newsTitle:   news?.title  || null,
+            newsUrl:     news?.url    || null,
+            newsSource:  news?.source || null,
+            newsAuthor:  news?.author || null,
+            topic:       content?.topic_summary  || null,
+            fluxPrompt:  content?.flux_prompt   || null,
+            igCaption:   content?.ig_caption    || null,
+            imageUrl:    null,
+            postId:      igResult?.postId || null,
+            status:      'failed',
+            errorMsg:    detail.slice(0, 500),
+            rawNews:     news || null,
+        });
     } finally {
         logger.info('=== i-En 進入休眠 ===\n');
     }

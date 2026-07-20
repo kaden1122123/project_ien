@@ -1,37 +1,71 @@
 import fs from 'fs/promises';
 import { CONFIG } from './config.js';
+import { getMemoryQueue, pushMemory, clearMemory as dbClearMemory } from './db.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 模組 A：FIFO 滑動視窗記憶體（既有，完全保留）
+// 模組 A：FIFO 滑動視窗記憶體（SQLite 版）
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * 取得最近的話題佇列（由新到舊，最多 CONFIG.MEMORY_LIMIT 筆）
+ * 同時支援：SQLite（新）與 JSON 檔案（舊，相容性 fallback）
+ */
 export async function getRecentContext() {
+    try {
+        const rows = getMemoryQueue();
+        if (rows && rows.length > 0) {
+            return rows; // SQLite 有資料優先
+        }
+    } catch (_) {
+        // SQLite 尚未初始化或無資料，走 JSON fallback
+    }
+
+    // JSON fallback（第一次安裝或資料庫為空時）
     try {
         const data = await fs.readFile(CONFIG.MEMORY_FILE_PATH, 'utf-8');
         return JSON.parse(data);
     } catch (error) {
-        if (error.code === 'ENOENT') {
-            return [];
-        }
+        if (error.code === 'ENOENT') return [];
         throw new Error(`[Storage Error] 記憶體讀取失敗: ${error.message}`);
     }
 }
 
+/**
+ * 新增話題至佇列，並維持佇列長度不超過 CONFIG.MEMORY_LIMIT
+ * 同時寫入 SQLite（新）與 JSON 檔案（舊，相容性 fallback）
+ */
 export async function updateMemoryQueue(newTopicSummary) {
-    let queue = await getRecentContext();
-
-    queue.push(newTopicSummary);
-
-    while (queue.length > CONFIG.MEMORY_LIMIT) {
-        queue.shift();
+    // 1. 寫入 SQLite（新）
+    try {
+        pushMemory(newTopicSummary);
+    } catch (e) {
+        console.warn(`[Storage] SQLite 寫入失敗，降級至 JSON: ${e.message}`);
     }
 
-    await fs.writeFile(CONFIG.MEMORY_FILE_PATH, JSON.stringify(queue, null, 2), 'utf-8');
-    return queue;
+    // 2. 寫入 JSON 檔案（維持舊相容性，慢慢遷移）
+    try {
+        const queue = await getRecentContext();
+        const item = {
+            topic: newTopicSummary,
+            created_at: new Date().toISOString()
+        };
+
+        queue.push(item);
+
+        while (queue.length > CONFIG.MEMORY_LIMIT) {
+            queue.shift();
+        }
+
+        await fs.writeFile(CONFIG.MEMORY_FILE_PATH, JSON.stringify(queue, null, 2), 'utf-8');
+        return queue;
+    } catch (e) {
+        console.error(`[Storage] JSON 寫入也失敗: ${e.message}`);
+        throw e;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 模組 B：檔案存檔（新增）
+// 模組 B：檔案存檔（維持原狀）
 // ─────────────────────────────────────────────────────────────────────────────
 
 export { archiveRecord } from './outputArchiver.js';
@@ -49,7 +83,6 @@ const INDEX_FILE  = join(OUTPUT_BASE, 'index.json');
  * @returns {Promise<{author: string, content: string}>}
  */
 export async function fetchFullArticle(url) {
-    // 先嘗試從快取拿（optional enhancement）
     const res = await fetch(url, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (compatible; i-En-Bot/1.0)',
@@ -101,7 +134,6 @@ export async function fetchFullArticle(url) {
     for (const sel of contentSelectors) {
         const el = $(sel).first();
         if (el.length) {
-            // 拿純文字，保留段落間的空行
             content = el.find('p').map((_, p) => $(p).text().trim()).get()
                       .filter(t => t.length > 0)
                       .join('\n\n');
