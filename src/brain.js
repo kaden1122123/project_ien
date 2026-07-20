@@ -95,84 +95,109 @@ export async function generateContent(news) {
 
 請根據上述新聞，以小艾的風格生成 JSON 輸出。`;
 
-    try {
-        const msg = await anthropic.messages.create({
-            model: "MiniMax-M2.7",
-            max_tokens: 4096,
-            system: systemPrompt,
-            messages: [{ role: "user", content: userPrompt }],
-        });
+    // ====== 🔄 MiniMax 529 重試機制 ======
+    const MAX_RETRIES = 3;
+    let lastError;
 
-        // ====== 🛡️ MiniMax API 層級錯誤檢查 ======
-        const baseResp = msg._private ? msg._private.fetchResponse?.data?.base_resp : null;
-        if (baseResp && baseResp.status_code !== 0) {
-            throw new Error(`[Brain API 錯誤] MiniMax: ${baseResp.status_msg} (code: ${baseResp.status_code})`);
-        }
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const msg = await anthropic.messages.create({
+                model: "MiniMax-M2.7",
+                max_tokens: 4096,
+                system: systemPrompt,
+                messages: [{ role: "user", content: userPrompt }],
+            });
 
-        // ====== 🛡️ 回應格式檢查 ======
-        const textBlocks = msg.content.filter(block => block.type === 'text');
-        const rawContent = textBlocks.at(-1)?.text;
-
-        if (!rawContent) {
-            const availableTypes = msg.content.map(b => b.type).join(', ');
-            // 若只有 thinking blocks，通常是 MiniMax 回覆空白或未完成，稍後重試
-            const hasOnlyThinking = msg.content.length > 0 && msg.content.every(b => b.type === 'thinking');
-            if (hasOnlyThinking) {
-                throw new Error(`[Brain Response Empty] API only returned thinking blocks (no text). This may be a transient MiniMax issue. Available types: ${availableTypes}`);
+            // ====== 🛡️ MiniMax API 層級錯誤檢查 ======
+            const baseResp = msg._private ? msg._private.fetchResponse?.data?.base_resp : null;
+            if (baseResp && baseResp.status_code !== 0) {
+                const statusCode = baseResp.status_code;
+                const statusMsg  = baseResp.status_msg;
+                // 只有 529 overloaded_error 才觸發重試
+                if (statusCode === 529) {
+                    if (attempt < MAX_RETRIES) {
+                        const delay = attempt * 5 * 1000; // 5s → 10s → 15s
+                        console.warn(`[Brain] ⚠️ 第 ${attempt} 次重試：529 overloaded_error，${delay / 1000}s 後再試`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    } else {
+                        throw new Error(`[Brain API 錯誤] MiniMax: ${statusMsg} (code: ${statusCode})`);
+                    }
+                }
+                throw new Error(`[Brain API 錯誤] MiniMax: ${statusMsg} (code: ${statusCode})`);
             }
-            throw new Error(`[Brain Error] 無法取得文字區塊。可用類型: ${availableTypes}`);
-        }
 
-        // ====== 🛡️ 防禦性 JSON 解析 ======
-        // 先用 ``` 分段，個別去掉 fences 再解析（處理 }```json{ 的拼接問題）
-        const fenceRegex = /```(?:json)?\s*/gi;
-        const parts = rawContent.split(fenceRegex).filter(p => p.trim());
+            // ====== 🛡️ 回應格式檢查 ======
+            const textBlocks = msg.content.filter(block => block.type === 'text');
+            const rawContent = textBlocks.at(-1)?.text;
 
-        for (const part of parts) {
-            const cleaned = part.trim();
-            try {
-                return JSON.parse(cleaned);
-            } catch { /* try next part */ }
-        }
+            if (!rawContent) {
+                const availableTypes = msg.content.map(b => b.type).join(', ');
+                // 若只有 thinking blocks，通常是 MiniMax 回覆空白或未完成，稍後重試
+                const hasOnlyThinking = msg.content.length > 0 && msg.content.every(b => b.type === 'thinking');
+                if (hasOnlyThinking) {
+                    throw new Error(`[Brain Response Empty] API only returned thinking blocks (no text). This may be a transient MiniMax issue. Available types: ${availableTypes}`);
+                }
+                throw new Error(`[Brain Error] 無法取得文字區塊。可用類型: ${availableTypes}`);
+            }
 
-        // 最後嘗試從整段取第一個 { 到最後一個 }
-        const firstBrace = rawContent.indexOf('{');
-        const lastBrace  = rawContent.lastIndexOf('}');
-        if (firstBrace >= 0 && lastBrace > firstBrace) {
-            for (let shrink = 0; shrink <= 5; shrink++) {
-                const endPos = lastBrace - shrink;
-                if (endPos <= firstBrace) break;
+            // ====== 🛡️ 防禦性 JSON 解析 ======
+            // 先用 ``` 分段，個別去掉 fences 再解析（處理 }```json{ 的拼接問題）
+            const fenceRegex = /```(?:json)?\s*/gi;
+            const parts = rawContent.split(fenceRegex).filter(p => p.trim());
+
+            for (const part of parts) {
+                const cleaned = part.trim();
                 try {
-                    return JSON.parse(rawContent.substring(firstBrace, endPos + 1));
-                } catch { /* continue */ }
+                    return JSON.parse(cleaned);
+                } catch { /* try next part */ }
             }
-        }
 
-        // ====== 🛡️ 修復：將字串值內的 literal newlines 置換為 \\n ======
-        // MiniMax 有時會輸出 0x0A literal newline 而非 \\n escape sequence
-        const sanitized = _escapeNewlinesInJsonStrings(rawContent);
-        for (const part of sanitized.split(fenceRegex).filter(p => p.trim())) {
-            try {
-                return JSON.parse(part.trim());
-            } catch { /* try next part */ }
-        }
+            // 最後嘗試從整段取第一個 { 到最後一個 }
+            const firstBrace = rawContent.indexOf('{');
+            const lastBrace  = rawContent.lastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                for (let shrink = 0; shrink <= 5; shrink++) {
+                    const endPos = lastBrace - shrink;
+                    if (endPos <= firstBrace) break;
+                    try {
+                        return JSON.parse(rawContent.substring(firstBrace, endPos + 1));
+                    } catch { /* continue */ }
+                }
+            }
 
-        // Brace extraction with sanitization
-        if (firstBrace >= 0 && lastBrace > firstBrace) {
-            const sanitizedSubstr = _escapeNewlinesInJsonStrings(rawContent.substring(firstBrace, lastBrace + 1));
-            for (let shrink = 0; shrink <= 5; shrink++) {
-                const endPos = lastBrace - shrink;
-                if (endPos <= firstBrace) break;
+            // ====== 🛡️ 修復：將字串值內的 literal newlines 置換為 \\n ======
+            // MiniMax 有時會輸出 0x0A literal newline 而非 \\n escape sequence
+            const sanitized = _escapeNewlinesInJsonStrings(rawContent);
+            for (const part of sanitized.split(fenceRegex).filter(p => p.trim())) {
                 try {
-                    return JSON.parse(sanitizedSubstr.substring(0, sanitizedSubstr.length - shrink));
-                } catch { /* continue */ }
+                    return JSON.parse(part.trim());
+                } catch { /* try next part */ }
             }
+
+            // Brace extraction with sanitization
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                const sanitizedSubstr = _escapeNewlinesInJsonStrings(rawContent.substring(firstBrace, lastBrace + 1));
+                for (let shrink = 0; shrink <= 5; shrink++) {
+                    const endPos = lastBrace - shrink;
+                    if (endPos <= firstBrace) break;
+                    try {
+                        return JSON.parse(sanitizedSubstr.substring(0, sanitizedSubstr.length - shrink));
+                    } catch { /* continue */ }
+                }
+            }
+
+            throw new Error(`[Brain JSON Error] 無法解析有效 JSON。原始內容: ${rawContent}`);
+
+        } catch (error) {
+            lastError = error;
+            // [Brain 開頭的錯誤已經是整理過的，直接拋出
+            if (error.message.includes('[Brain')) throw error;
+            // 其他錯誤也直接拋出（讓外層捕獲）
+            throw error;
         }
-
-        throw new Error(`[Brain JSON Error] 無法解析有效 JSON。原始內容: ${rawContent}`);
-
-    } catch (error) {
-        if (error.message.includes('[Brain')) throw error;
-        throw new Error(`[Brain API 錯誤] ${error.message}`);
     }
+
+    // 重試耗盡，拋出最後一個錯誤
+    throw lastError || new Error('[Brain] 重試機制異常結束');
 }
