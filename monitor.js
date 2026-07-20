@@ -4,13 +4,24 @@
  * 發現问题时發送 Email 通知
  */
 
-import { readFileSync, statSync, writeFileSync } from 'fs';
+import { readFileSync, statSync, writeFileSync, appendFileSync } from 'fs';
 import { execFileSync } from 'child_process';
+import { healthCheck } from './src/health_check.js';
+import dotenv from 'dotenv';
+
+// 載入 GMAIL_APP_PASSWORD（與 config.js 同樣的 .env 路徑）
+const envLoaded = dotenv.config({ path: '/home/clawuser/.openclaw/.env' });
+const env = envLoaded.parsed || {};
 
 const LOG_FILE        = '/home/clawuser/openclaw-workspace/others/project_ien/logs/ien_system.log';
 const MEM_FILE        = '/home/clawuser/openclaw-workspace/others/project_ien/data/memory.json';
 const LAST_ALERT_FILE = '/home/clawuser/openclaw-workspace/others/project_ien/.last_alert_ts';
+const ERR_LOG_FILE    = '/home/clawuser/openclaw-workspace/others/project_ien/logs/ien_monitor_errors.log';
 const LOOKBACK_MS     = 24 * 60 * 60 * 1000; // 24 小時
+
+const FROM_EMAIL = 'kaden1122123@gmail.com';
+const TO_EMAIL   = 'k.chang.8844@gmail.com';
+const APP_PASS   = env.GMAIL_APP_PASSWORD || '';
 
 // ─── 1. 讀取日誌，篩選近 24 小時的 [致命錯誤] ───────────────────────────────
 function checkLogs() {
@@ -71,20 +82,48 @@ function checkMemory() {
     return issues;
 }
 
-// ─── 3. 發送 Email ────────────────────────────────────────────────────────
+// ─── 3. 發送 Email（App Password SMTP，繞過 OAuth）──────────────────────
+function buildRFC822(from, to, subject, body) {
+    return [
+        `From: i-En Monitor <${from}>`,
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        `MIME-Version: 1.0`,
+        `Content-Type: text/plain; charset=UTF-8`,
+        ``,
+        body
+    ].join('\r\n');
+}
+
 function sendEmail(subject, body) {
+    if (!APP_PASS) {
+        const msg = '[Monitor] ❌ GMAIL_APP_PASSWORD 未設定（.env）— 無法寄信';
+        console.error(msg);
+        try { appendFileSync(ERR_LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`, 'utf-8'); } catch {}
+        return false;
+    }
     try {
-        // 使用 execFileSync（陣列形式），避免 shell 解讀 body 中的換行符
-        execFileSync('gog', [
-            'gmail', 'send',
-            '--to', 'k.chang.8844@gmail.com',
-            '--subject', subject,
-            '--body', body
-        ], { encoding: 'utf-8', stdio: 'pipe' });
-        console.log('[Monitor] ✅ Email 通知已發送至 k.chang.8844@gmail.com');
+        execFileSync('curl', [
+            '--silent', '--show-error',
+            '--url', 'smtps://smtp.gmail.com:465',
+            '--ssl-reqd',
+            '--mail-from', FROM_EMAIL,
+            '--mail-rcpt', TO_EMAIL,
+            '--user', `${FROM_EMAIL}:${APP_PASS}`,
+            '--upload-file', '-'
+        ], {
+            input: buildRFC822(FROM_EMAIL, TO_EMAIL, subject, body),
+            encoding: 'utf-8',
+            stdio: 'pipe'
+        });
+        console.log(`[Monitor] ✅ Email 通知已發送至 ${TO_EMAIL}`);
+        return true;
     } catch (err) {
-        console.error(`[Monitor] ❌ Email 發送失敗: ${err.message}`);
+        const failMsg = `[Monitor] ❌ Email 發送失敗: ${err.message}`;
+        console.error(failMsg);
+        try { appendFileSync(ERR_LOG_FILE, `[${new Date().toISOString()}] ${failMsg}\n--- BODY ---\n${body}\n--- END ---\n`, 'utf-8'); } catch {}
         console.log(`\n========== 警報（Email 發送失敗）==========\n${body}\n==========================================`);
+        return false;
     }
 }
 
@@ -102,7 +141,16 @@ function writeLastAlertTs(ts) {
 }
 
 // ─── 4. 主邏輯 ───────────────────────────────────────────────────────────
-function main() {
+async function main() {
+    // ── 4a. Proactive health check（Token 有效性 + API 版本）──────────────
+    const report = await healthCheck();
+
+    if (report.healthy) {
+        console.log('[Monitor] ✅ 健康：Token OK / API v21.0 OK / 無 FATAL log');
+        return;
+    }
+
+    // ── 4b. 組合被動日誌掃描結果 ──────────────────────────────────────
     const logErrors   = checkLogs();
     const memIssues   = checkMemory();
     const hasFatal   = logErrors.length > 0;
@@ -140,7 +188,7 @@ function main() {
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         lines.push(`📌 新增致命錯誤（自 ${new Date(lastAlertTs).toLocaleString('zh-TW')} 後）`);
         lines.push(`共 ${newFatalErrors.length} 筆\n`);
-        if (newFatalErrors.some(e => e.code190)) lines.push('⚠️  IG API Token 已過期（Meta Error Code 190）— 請更新 META_INSTAGRAM_API_KEY\n');
+        if (newFatalErrors.some(e => e.code190)) lines.push('⚠️  IG API Token 已過期（Meta Error Code 190）— 請至 Meta Developer → 角色 → 重新產生 META_DEV_IEN_ACCESS_TOKEN\n');
         newFatalErrors.forEach(e => {
             const tag = e.code190 ? ' [⚠️ Token 過期]' : '';
             lines.push(`[${e.ts}]${tag} ${e.msg}`);
