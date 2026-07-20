@@ -1,0 +1,24 @@
+#============================================================
+# i-En Crontab 管理檔案
+# 所有 crontab 項目由此檔案定義，方便集中管理與追蹤
+#
+# 使用方式：
+#   crontab cron/active_crons
+#============================================================
+
+#────────── i-En Pipeline（每4小時）────────────────────
+# 用途：執行 Brain→Vision→R2→IG→Memory 完整流程
+# 腳本：/home/clawuser/.openclaw/workspace/ien_cron_runner.sh
+# 日誌：/home/clawuser/openclaw-workspace/others/project_ien/logs/cron_runner.log
+# 相依：node, MiniMax API, IG API, R2, github raw upload
+#
+0 */4 * * * /home/clawuser/.openclaw/workspace/ien_cron_runner.sh >> /home/clawuser/openclaw-workspace/others/project_ien/logs/cron_runner.log 2>&1
+
+#────────── i-En API 監控（每小時）────────────────────────
+# 用途：三檢查點被動監控（Token狀態 / API版本 / 异常Log）
+#       發現問題才主動通知，無異常則安静待命
+# 腳本：/home/clawuser/.openclaw/workspace/ien_light_monitor.sh
+# 日誌：/home/clawuser/openclaw-workspace/others/project_ien/logs/cron_monitor.log
+# 相依：curl, discord
+#
+0 * * * * cd /home/clawuser/openclaw-workspace/others/project_ien && /home/clawuser/.openclaw/workspace/ien_light_monitor.sh >> /home/clawuser/openclaw-workspace/others/project_ien/logs/cron_monitor.log 2>&1
