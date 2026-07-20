@@ -152,7 +152,12 @@ i-En 同時有兩套 cron 管理：
 ### A. OpenClaw cron（推薦）
 
 - Job ID `27d05048`：每 4 小時跑 `main.js` + `monitor.js`
-- 失敗會推播到 Discord channel `1485058398486532167`（#project-ien）
+  - 失敗會推播到 Discord channel `1485058398486532167`（#project-ien）
+- Job ID `dabbab38`：每週一 09:00 Asia/Taipei 跑 `scripts/weekly-health-check.js`
+  - 一切正常 → 靜默不通知
+  - 有問題（Token expired / API deprecated / 新 FATAL）→ 推 Discord `#project-ien`
+  - 驗證 IG token TTL（debug_token），< 14 天才警告
+  - **2026-07 後 Meta 新政策：long-lived token expires_at=0（永久），不再需要 60 天 refresh**
 
 ### B. 系統 crontab（備用，尚未套用）
 
@@ -170,6 +175,29 @@ crontab cron/active_crons
 ```bash
 bash cron_reporter.sh
 # 跑 main.js + monitor.js → curl POST 到 Discord
+```
+
+---
+
+## Monitor 警報機制
+
+i-En 用 `.last_alert_ts` 檔案防止「重複寄信」：
+
+- `monitor.js` 讀 `.last_alert_ts`（毫秒 timestamp）
+- 只寄「時間戳 > `.last_alert_ts`」的新 FATAL（過往的當作已通知）
+- 寄信成功或失敗後都會更新 `.last_alert_ts`（避免 retry spam）
+
+**設計意涵**：
+- 4-7 月累積的 5 筆歷史 FATAL → timestamp 都早於 `.last_alert_ts` → 不會被重複警告
+- 未來新 FATAL → timestamp > 現在 → 會被警告
+- `scripts/weekly-health-check.js` 沿用同一個 filter → 週報也不會警告歷史 FATAL
+
+**手動重置**（如果你想重新收到所有 FATAL）：
+
+```bash
+# 把 .last_alert_ts 改成 0（讓所有 FATAL 都當作新）
+echo 0 > .last_alert_ts
+node monitor.js   # 下次 cron 跑前可手動測試
 ```
 
 ---
