@@ -14,6 +14,13 @@ output/
 # Logs & runtime data
 logs/
 data/memory.json
+# i-En runtime data（gitignore 註解需在行首，內嵌 # 會被當 pattern）
+data/posted_topics.json
+data/ien.db
+data/ien.db-journal
+data/ien.db-shm
+data/ien.db-wal
+data/.last_monitor_state.json
 
 # OS
 .DS_Store
